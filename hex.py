@@ -7,6 +7,11 @@ import argparse
 VELIKOST = 8
 MODRI = 'M'
 RDECI = 'R'
+seznam= []
+
+radij=20.
+premik=radij*.87
+zamik = 50.
 
 #########################################
 
@@ -24,12 +29,24 @@ def nasprotnik(igralec):
 class Igra():
 
 	def __init__(self):
-		self.plosca = [['NaN' for x in range(VELIKOST)] for y in range(VELIKOST)]
+		self.plosca = [['PRAZNO' for x in range(VELIKOST)] for y in range(VELIKOST)]
 		self.naPotezi = MODRI
 
 	def naredi_potezo(self):
 		#TODO: veljavnost poteze
 		self.na_potezi = nasprotnik(self.na_potezi)
+
+	def veljavna_poteza(self, polje):
+        "Metoda preverja ali je dana poteza veljavna."
+        x = polje / 10
+        y = polje % 10
+        if self.plosca[y][x] != PRAZNO:
+            return False
+        else:
+            for (vrstica, stolpec) in self.sosedi(y, x):
+                if self.plosca[vrstica][stolpec] == self.na_potezi:
+                    return True
+            return False
 
 #########################################
 
@@ -38,7 +55,7 @@ class Gui():
 	TAG_FIGURA = 'fig'
 
 	def __init__(self, root):
-		self.plosca = Canvas(root, width=50*(VELIKOST+1), height=40*(VELIKOST+1))
+		self.plosca = Canvas(root, width=50*(VELIKOST+1), height=(VELIKOST)*2*radij)
 		self.plosca.grid(row=0, column=0)
 
 		self.narisiPlosco()
@@ -49,13 +66,14 @@ class Gui():
 
 	def onObjectClick(self, event):                  
 		print('Got object click', event.x, event.y)
-		print(event.widget.find_closest(event.x, event.y))
+		print(int(event.widget.find_closest(event.x, event.y)[0]))
+		
+		objekt = int(event.widget.find_closest(event.x, event.y)[0])
+		# if self.igra.veljavna_poteza()
+		# self.igraNarediPotezo()
+
 
 	def narisiPlosco(self):
-		radij=20.
-		premik=radij*.87
-		zamik = 50.
-
 		x1, y1 = 0, radij
 		x2, y2 = .87*radij, radij/2
 		x3, y3 = .87*radij, -radij/2
@@ -93,6 +111,19 @@ class Gui():
 		root.destroy()
 #########################################
 
+class Clovek():
+     def __init__(self, gui):
+         self.gui = gui
+
+     def igraj(self):
+         pass
+     def prekini(self):
+         pass
+
+     def klik(self, vr, st):
+         self.gui.naredi_potezo(vr, st)
+
+#########################################
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser(description="Igrica Hex")
