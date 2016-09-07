@@ -11,5 +11,5 @@ Python projekt pri predmetu Programiranje 2.
 #Potek:
   * Igralca začneta vsak s svojo stranico polja.
   * Začetni stranici za modrega in rdečega igralca sta sosednji.
-  * Med potezo igralec zasede eno prosto polje, ki meji na njegova polja.
+  * Med potezo igralec zasede eno prosto polje.
   * Igra poteka izmenično, igralec na vrsti opravi eno potezo
