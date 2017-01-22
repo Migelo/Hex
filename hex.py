@@ -3,15 +3,16 @@ from Tkinter import *
 import threading
 import logging
 import argparse
+from collections import namedtuple, deque
 from pprint import pprint as pp
-from collections import deque
-from collections import namedtuple
 
 VELIKOST = 8
 MODRI = 'M'
 RDECI = 'R'
+PRAZNO = 'PRAZNO'
 seznam= []
 ZMAGOVALEC = None
+NI_KONEC = "ni konec"
 
 radij=20.
 premik=radij*.87
@@ -49,26 +50,97 @@ class Igra():
         self.plosca = [['PRAZNO' for x in range(VELIKOST)] for y in range(VELIKOST)]
         self.na_potezi = MODRI
         self.gui = gui
+        self.zgodovina = []
 
-    def naredi_potezo(self, polje):
-        # polje -= 1
-        # x = polje % VELIKOST
-        # y = polje / VELIKOST
-        self.na_potezi = nasprotnik(self.na_potezi)
+    def shrani_pozicijo(self):
+        """Shrani trenutno pozicijo, da se bomo lahko kasneje vrnili vanjo
+           z metodo razveljavi."""
+        p = [self.plosca[i][:] for i in range(VELIKOST)]
+        self.zgodovina.append((p, self.na_potezi))
 
-    def veljavna_poteza(self, polje, na_potezi):
-        "Metoda preverja ali je dana poteza veljavna."
-        polje -= 1
-        x = polje % VELIKOST
+    def kopija(self):
+        """Vrni kopijo te igre, brez zgodovine."""
+        # Kopijo igre naredimo, ko poženemo na njej algoritem.
+        # Če bi algoritem poganjali kar na glavni igri, ki jo
+        # uporablja GUI, potem bi GUI mislil, da se menja stanje
+        # igre (kdo je na potezi, kdo je zmagal) medtem, ko bi
+        # algoritem vlekel poteze
+        k = Igra()
+        k.plosca = [self.plosca[i][:] for i in range(VELIKOST)]
+        k.na_potezi = self.na_potezi
+        return k
+
+    def razveljavi(self):
+        """Razveljavi potezo in se vrni v prejšnje stanje."""
+        (self.plosca, self.na_potezi) = self.zgodovina.pop()
+
+    def veljavne_poteze(self):
+        """Vrni seznam veljavnih potez."""
+        poteze = []
+        for i in range(VELIKOST**2):
+            if self.plosca[i / VELIKOST][i % VELIKOST] is PRAZNO:
+                    poteze.append((i))
+        return poteze
+
+    def povleci_potezo(self, polje):
+        """Povleci potezo p, ne naredi nič, če je neveljavna.
+           Vrne stanje_igre() po potezi ali None, ce je poteza neveljavna."""
+        print(polje)
         y = polje / VELIKOST
-        #print('x: ' + str(x))
-        #print('y: ' + str(y))
-        if self.plosca[y][x] != 'PRAZNO':
-            return False
+        x = polje % VELIKOST
+        if (self.plosca[y][x] != PRAZNO) or (self.na_potezi == None):
+            # neveljavna poteza
+            return None
         else:
-            #print("Veljavna!")
-            self.plosca[y][x] = na_potezi
-            return True
+            self.shrani_pozicijo()
+            self.plosca[y][x] = self.na_potezi
+            zmagovalec = self.stanje_igre()
+            if zmagovalec == NI_KONEC:
+                # Igre ni konec, zdaj je na potezi nasprotnik
+                self.na_potezi = nasprotnik(self.na_potezi)
+            else:
+                # Igre je konec
+                self.na_potezi = None
+            return zmagovalec
+
+    def stanje_igre(self):
+        """Ugotovi, kakšno je trenutno stanje igre. Vrne:
+           - (MODRI), če je igre konec in je zmagal MODRI
+           - (RDECI), če je igre konec in je zmagal RDEČI
+           - (NEODLOCENO), če je igre konec in je neodločeno
+           - (NI_KONEC), če igre še ni konec
+        """
+        #print self.plosca
+
+        # graph=list(graph)
+
+        graph_modri = self.sestaviGraf(self.plosca, MODRI)
+        # print len(graph_modri)
+        # print graph_modri
+        graph_modri = Graph(graph_modri)
+        graph_rdeci = set(self.sestaviGraf(self.plosca, RDECI))
+        # print graph_rdeci
+        graph_rdeci = Graph(graph_rdeci)
+        # print self.plosca
+
+        stanje_MODRI = graph_modri.dijkstra((0,-1), (0,VELIKOST))
+        # print("iscemo pot: ", (0,-1), (0,VELIKOST))
+        # print "stanje M: ", stanje_MODRI
+        stanje_RDECI = graph_rdeci.dijkstra((-1,0), (VELIKOST, 0))
+        # print "stanje R: ", stanje_RDECI
+
+
+        if stanje_MODRI != NI_KONEC:
+            return MODRI
+        elif stanje_RDECI != NI_KONEC:
+            return RDECI
+        elif len(self.veljavne_poteze()) == 0:
+            return NEODLOCENO
+        elif stanje_MODRI == NI_KONEC and stanje_RDECI == NI_KONEC:
+            return NI_KONEC
+        else:
+            print("Nemore se zgoditi, pa se je, igra.stanje_igre().")
+
 
     def sosedi(self, y, x):
         """Metoda preveri, kateri so sosedi izbranega polja."""
@@ -76,29 +148,46 @@ class Igra():
         for (dy, dx) in ((-1,0), (-1,1),
                  (0, -1),     (0, 1),
                  (1, -1), (1, 0)):
-            if 0 <= x + dx < SIZE and 0 <= y + dy < SIZE:
+            if 0 <= x + dx < VELIKOST and 0 <= y + dy < VELIKOST:
                 sosedi.append((y + dy, x + dx))
         logging.debug ("Sosedi od ({0}, {1}) so {2}".format(y,x,sosedi))
         return sosedi
 
-    def sestaviGraf(plosca):
-        "Sestavi graf trenutne poteze."
+    def sestaviGraf(self, plosca, barva, ai=False):
+        """Sestavi graf trenutne poteze."""
         queue = []
-        # sosedi = deque()
-        for st in range(SIZE):
-            queue.append(((-1, 0),(0, st), 1))
-            queue.append(((SIZE-1, st),(SIZE, 0), 1))
-        # print queue
-        for vr in range(SIZE):
-                for st in range(SIZE):
-                    seznamSosedov = sosedi(vr, st)
-                    for sosed in seznamSosedov:
-                        if plosca[vr][st] == 'PRAZNO':
-                            queue.append(((vr, st),(sosed[0], sosed[1]), 1))
-                        elif plosca[vr][st] == plosca[sosed[0]][sosed[1]]:
-                            queue.append(((vr, st),(sosed[0], sosed[1]), 0))
-                        else:
-                            pass
+        if ai:
+            for vr in range(VELIKOST):
+                    for st in range(VELIKOST):
+                        seznamSosedov = self.sosedi(vr, st)
+                        for sosed in seznamSosedov:
+                            if plosca[vr][st] == 'PRAZNO':
+                                queue.append(((vr, st),(sosed[0], sosed[1]), 1))
+                            elif plosca[vr][st] == barva:
+                                queue.append(((vr, st),(sosed[0], sosed[1]), 0))
+                            else:
+                                pass
+        else:
+            for vr in range(VELIKOST):
+                    for st in range(VELIKOST):
+                        seznamSosedov = self.sosedi(vr, st)
+                        for sosed in seznamSosedov:
+                            if plosca[vr][st] == barva and plosca[sosed[0]][sosed[1]] == barva:
+                                # print("Appending: ", (vr, st), (sosed[0], sosed[1]))
+                                queue.append(((vr, st),(sosed[0], sosed[1]), 0))
+                            else:
+                                pass
+        if barva == MODRI:
+            print "barva: ", barva
+            for vr in range(VELIKOST):
+                queue.append(((0, -1),(vr, 0), 1))
+                queue.append(((vr, VELIKOST - 1),(0, VELIKOST), 1))
+
+        if barva == RDECI:
+            for st in range(VELIKOST):
+                queue.append(((-1, 0),(0, st), 1))
+                queue.append(((VELIKOST - 1, st),(VELIKOST , 0), 1))
+
         return queue
 
     def je_konec(self):
@@ -120,59 +209,92 @@ class Igra():
                         seznam.append(self.povezano('M', x, y))
         if ZMAGOVALEC != None:
             return True
+        if len(self.veljavne_poteze()) == 0:
+            ZMAGOVALEC = "NEODLOCENO"
+            return True
 
 
-        # for y in range(0, VELIKOST):
-        #     obstaja_y = False
-        #     for x in range(0, VELIKOST):
-        #         if self.plosca[y][x] == 'R':
-        #             obstaja_y = True
-        #     if obstaja_y == False:
-        #         return False
-        #     if obstaja_y == True and y == VELIKOST - 1:
-        #         return self.povezano('R', x, y)
-
-    def povezano(self, barva, x_dan, y_dan, obiskani=[]):
-        global ZMAGOVALEC
-        if (y_dan, x_dan) not in obiskani: obiskani.append((y_dan, x_dan))
-        for (dy, dx) in ((-1,0), (-1,1),
-                 (0, -1), (0, 1),
-                 (1, -1), (1, 0)):
-            if 0 <= x_dan + dx < VELIKOST and 0 <= y_dan + dy < VELIKOST and self.plosca[y_dan][x_dan] == barva and (y_dan + dy, x_dan + dx) not in obiskani:
-                #print self.plosca[y_dan+dy][x_dan+dx]
-                if x_dan == VELIKOST - 1:
-                    if barva == 'M':
-                        #print("x: " + str(x_dan))
-                        #print("y: " + str(y_dan))
-                        print(barva + " je povezala!")
-                        ZMAGOVALEC = MODRI
-                if y_dan == VELIKOST - 1:
-                    if barva == 'R':
-                        print(barva + " je povezala!")
-                        ZMAGOVALEC = RDECI
-                else:
-                    self.povezano(barva, x_dan + dx, y_dan + dy, obiskani)
-
-    def sestaviGraf(self, plosca):
-        "Sestavi graf trenutne poteze."
-        queue = []
-        # sosedi = deque()
-        for st in range(SIZE):
-            queue.append(((-1, 0),(0, st), 1))
-            queue.append(((SIZE-1, st),(SIZE, 0), 1))
-        # print queue
-        for vr in range(SIZE):
-                for st in range(SIZE):
-                    seznamSosedov = self.sosedi(vr, st)
-                    for sosed in seznamSosedov:
-                        if plosca[vr][st] == 'PRAZNO':
-                            queue.append(((vr, st),(sosed[0], sosed[1]), 1))
-                        elif plosca[vr][st] == plosca[sosed[0]][sosed[1]]:
-                            queue.append(((vr, st),(sosed[0], sosed[1]), 0))
-                        else:
-                            pass
-        return queue
                     
+#########################################
+
+#########################################
+
+class Clovek():
+    def __init__(self, gui):
+        self.gui = gui
+
+    def igraj(self):
+        # Smo na potezi. Zaenkrat ne naredimo nič, ampak
+        # čakamo, da bo uporanik kliknil na ploščo. Ko se
+        # bo to zgodilo, nas bo Gui obvestil preko metode
+        # klik.
+        pass
+
+    def prekini(self):
+        # To metodo kliče GUI, če je treba prekiniti razmišljanje.
+        # Človek jo lahko ignorira.
+        pass
+
+    def klik(self, p):
+        # Povlečemo potezo. Če ni veljavna, se ne bo zgodilo nič.
+        self.gui.povleci_potezo(p)
+
+#########################################
+
+class Racunalnik():
+    def __init__(self, gui, algoritem):
+        self.gui = gui
+        self.algoritem = algoritem # Algoritem, ki izračuna potezo
+        self.mislec = None # Vlakno (thread), ki razmišlja
+
+    def igraj(self):
+        """Igraj potezo, ki jo vrne algoritem."""
+        # Tu sprožimo vzporedno vlakno, ki računa potezo. Ker tkinter ne deluje,
+        # če vzporedno vlakno direktno uporablja tkinter (glej http://effbot.org/zone/tkinter-threads.htm),
+        # zadeve organiziramo takole:
+        # - poženemo vlakno, ki poišče potezo
+        # - to vlakno nekam zapiše potezo, ki jo je našlo
+        # - glavno vlakno, ki sme uporabljati tkinter, vsakih 100ms pogleda, ali
+        #   je že bila najdena poteza (metoda preveri_potezo spodaj).
+        # Ta rešitev je precej amaterska. Z resno knjižnico za GUI bi zadeve lahko
+        # naredili bolje (vlakno bi samo sporočilo GUI-ju, da je treba narediti potezo).
+
+        # Naredimo vlakno, ki mu podamo *kopijo* igre (da ne bo zmedel GUIja):
+        self.mislec = threading.Thread(
+            target=lambda: self.algoritem.izracunaj_potezo(self.gui.igra.kopija()))
+
+        # Poženemo vlakno:
+        self.mislec.start()
+
+        # Gremo preverjat, ali je bila najdena poteza:
+        self.gui.plosca.after(100, self.preveri_potezo)
+
+    def preveri_potezo(self):
+        """Vsakih 100ms preveri, ali je algoritem že izračunal potezo."""
+        if self.algoritem.poteza is not None:
+            # Algoritem je našel potezo, povleci jo, če ni bilo prekinitve
+            self.gui.povleci_potezo(self.algoritem.poteza)
+            # Vzporedno vlakno ni več aktivno, zato ga "pozabimo"
+            self.mislec = None
+        else:
+            # Algoritem še ni našel poteze, preveri še enkrat čez 100ms
+            self.gui.plosca.after(100, self.preveri_potezo)
+
+    def prekini(self):
+        # To metodo kliče GUI, če je treba prekiniti razmišljanje.
+        if self.mislec:
+            logging.debug ("Prekinjamo {0}".format(self.mislec))
+            # Algoritmu sporočimo, da mora nehati z razmišljanjem
+            self.algoritem.prekini()
+            # Počakamo, da se vlakno ustavi
+            self.mislec.join()
+            self.mislec = None
+
+    def klik(self, p):
+        # Računalnik ignorira klike
+        pass
+
+
 #########################################
 
 class Gui():
@@ -203,7 +325,7 @@ class Gui():
         menu_moznosti.add_command(label="Računalnik proti človeku", command=lambda:
                                         self.restart(Racunalnik(self, AlfaBeta(globina)), Clovek(self)))
 
-        self.napis1 = StringVar(root, value="Space Me!")
+        self.napis1 = StringVar(root, value="Hex")
         Label(root, textvariable=self.napis1).grid(row=0, column=0)
 
         self.napis2 = StringVar(root, value="Na potezi je modri.")
@@ -213,33 +335,18 @@ class Gui():
         self.restart(Clovek(self), Clovek(self))
 
 
-    def onObjectClick(self, event):                  
+    def plosca_klik(self, event):                  
         # print('Got object click', event.x, event.y)
         # print(int(event.widget.find_closest(event.x, event.y)[0]))
         
         polje = int(event.widget.find_closest(event.x, event.y)[0])
-        #print('Polje: ' + str(polje))
-        if self.igra.veljavna_poteza(polje, self.igra.na_potezi):
-            polje -= 1
-            x = polje % VELIKOST
-            y = polje / VELIKOST
-            print(self.igra.na_potezi)
-            if self.igra.na_potezi == MODRI:
-                #print('Modri klik')
-                self.pobarvaj_modro(polje)
-                self.igralec_modri.klik(y,x)
-                self.igra.na_potezi = RDECI
-                
-            elif self.igra.na_potezi == RDECI:
-                #print('Rdeči klik')
-                self.pobarvaj_rdece(polje)
-                self.igralec_rdeci.klik(y,x)
-                self.igra.na_potezi = MODRI
-        else:
-            print('Neveljavna!')
+        polje -= 1
+        print(self.igra.na_potezi)
+        if self.igra.na_potezi == MODRI:
+            self.igralec_modri.klik(polje)
+        elif self.igra.na_potezi == RDECI:
+            self.igralec_rdeci.klik(polje)
 
-        # if self.igra.veljavna_poteza()
-        # self.igraNarediPotezo()
 
 
     def narisiPlosco(self):
@@ -257,31 +364,50 @@ class Gui():
                 #print(tag)
                 seznamSestkotnikov.append(self.plosca.create_polygon([x1+zamik+2*x*premik+y*premik,y1+zamik+radij*1.5*y, x2+zamik+2*x*premik+y*premik, y2+zamik+radij*1.5*y, x2+zamik+2*x*premik+y*premik, y2+zamik+radij*1.5*y, x3+zamik+2*x*premik+y*premik, y3+zamik+radij*1.5*y, x3+zamik+2*x*premik+y*premik, y3+zamik+radij*1.5*y, x4+zamik+2*x*premik+y*premik, y4+zamik+radij*1.5*y, x4+zamik+2*x*premik+y*premik, y4+zamik+radij*1.5*y, x5+zamik+2*x*premik+y*premik, y5+zamik+radij*1.5*y, x5+zamik+2*x*premik+y*premik, y5+zamik+radij*1.5*y, x6+zamik+2*x*premik+y*premik, y6+zamik+radij*1.5*y],
                     outline='black', fill='gray', width=2, tags = tag))
-                self.plosca.tag_bind(tag, '<ButtonPress-1>', self.onObjectClick)
-        #print(seznamSestkotnikov)
-            
-    def naredi_potezo(self, vr, st):
-        "Metoda naredi potezo in spremeni napis o stanju"
-        # if self.igra.na_potezi == MODRI:
-        #   seznam=self.igra.naredi_potezo()
-        #   self.pobarvaj_modro(seznam)
-        # elif self.igra.na_potezi == IGRALEC_RDECI:
-        #   seznam=self.igra.naredi_potezo(vr, st)
-        #   self.pobarvaj_rdece(seznam)
-        # else:
-        #   assert False, "nemore se zgodit"
+                self.plosca.tag_bind(tag, '<ButtonPress-1>', self.plosca_klik)
 
-        if self.igra.je_konec():
-            self.konec(ZMAGOVALEC)
-        elif self.igra.na_potezi == MODRI:
-            self.napis2.set("Na potezi je rdeči.")
-            # self.igralec_modri.igraj()
-        elif self.igra.na_potezi == RDECI:
-            self.napis2.set("Na potezi je modri.")
-            # self.igralec_rdeci.igraj()
+
+
+    def povleci_potezo(self, p):
+        """Povleci potezo p, če je veljavna. Če ni veljavna, ne naredi nič."""
+        # Najprej povlečemo potezo v igri, še pred tem si zapomnimo, kdo jo je povlekel
+        # (ker bo self.igra.povleci_potezo spremenil stanje igre).
+        # GUI se *ne* ukvarja z logiko igre, zato ne preverja, ali je poteza veljavna.
+        # Ta del za njega opravi self.igra.
+        igralec = self.igra.na_potezi
+        r = self.igra.povleci_potezo(p)
+        if r is None:
+            # Poteza ni bila veljavna, nič se ni spremenilo
+            pass
         else:
-            assert False, "nemore se zgodit, a se je. funkcija: naredi_potezo"
-        
+            # Poteza je bila veljavna, narišemo jo na zaslon
+            if igralec == MODRI:
+                self.pobarvaj_modro(p)
+            elif igralec == RDECI:
+                self.pobarvaj_rdece(p)
+            # Ugotovimo, kako nadaljevati
+            zmagovalec = r
+            if zmagovalec == NI_KONEC:
+                # Igra se nadaljuje
+                if self.igra.na_potezi == MODRI:
+                    self.napis2.set("Na potezi je MODRI.")
+                    self.igralec_modri.igraj()
+                elif self.igra.na_potezi == RDECI:
+                    self.napis2.set("Na potezi je RDEČI.")
+                    self.igralec_rdeci.igraj()
+            else:
+                # Igre je konec, koncaj
+                self.koncaj_igro(zmagovalec)
+
+
+    def koncaj_igro(self, zmagovalec):
+        """Nastavi stanje igre na konec igre."""
+        if zmagovalec == MODRI:
+            self.napis2.set("Zmagal je modri.")
+        elif zmagovalec == RDECI:
+            self.napis2.set("Zmagal je rdeči.")
+        else:
+            self.napis1.set("Neodločeno.")
 
     def restart(self, igralec_modri, igralec_rdeci):
         "Metoda ponastavi igro"
@@ -305,16 +431,14 @@ class Gui():
         if ZMAGOVALEC == None: self.plosca.itemconfig(seznamSestkotnikov[tag], fill='red')
         
     def zapriOkno(self, root):
-        "Ta metoda se pokliče, ko uporabnik zapre aplikacijo."
+        """Ta metoda se pokliče, ko uporabnik zapre aplikacijo."""
         root.destroy()
 
-    def ni_klika(self):
-        """Ko je igre konec unbindamo klik iz plošče"""
-        print "Nič več klikov zate."
         
     def konec(self, zmagovalec):
         """Izpiše zmagovalca in rezultat."""
-        self.napis2.set("Zmagal je " + zmagovalec)
+        if zmagovalec != 'NEODLOCENO': self.napis2.set("Zmagal je " + zmagovalec +".")
+        else: self.napis2.set("Igra je neodločena.")
         #print(seznamSestkotnikov)
         print("Konec")
         # stanje=self.igra.stanje()
@@ -327,32 +451,6 @@ class Gui():
 
 #########################################
 
-class Clovek():
-     def __init__(self, gui):
-         self.gui = gui
-
-     def igraj(self):
-         pass
-     def prekini(self):
-         pass
-
-     def klik(self, vr, st):
-        # a=1
-         self.gui.naredi_potezo(vr, st)
-
-#########################################
-
-class Racunalnik():
-    """docstring for Racunalnik"""
-    def __init__(self, gui):
-        self.gui = gui
-        
-    #def igraj():
-
-
-    # def preveri_potezo():
-
-#########################################
 
 class Minimax():
     def __init__(self, globina):
@@ -435,8 +533,8 @@ class Minimax():
         vrednost = 0
         stM=0
         stR=0
-        for vr in range(SIZE):
-            for st in range(SIZE):
+        for vr in range(VELIKOST):
+            for st in range(VELIKOST):
                 if self.igra.plosca[vr][st]=='M':
                     stM+=1
                 elif self.igra.plosca[vr][st]=='R':
@@ -451,13 +549,15 @@ class Minimax():
             assert False, "Vrednost pozicij ima neveljavnega igralca."
 
 #########################################
+# class za izračun povezanosti strani: https://rosettacode.org/wiki/Dijkstra's_algorithm#Python
 class Graph():
     def __init__(self, edges):
         self.edges = edges2 = [Edge(*edge) for edge in edges]
         self.vertices = set(sum(([e.start, e.end] for e in edges2), []))
-
+ 
     def dijkstra(self, source, dest):
-        assert source in self.vertices
+        if not source in self.vertices:
+            return NI_KONEC
         dist = {vertex: inf for vertex in self.vertices}
         previous = {vertex: None for vertex in self.vertices}
         dist[source] = 0
@@ -465,7 +565,6 @@ class Graph():
         neighbours = {vertex: set() for vertex in self.vertices}
         for start, end, cost in self.edges:
             neighbours[start].add((end, cost))
-        #pp(neighbours)
  
         while q:
             u = min(q, key=lambda vertex: dist[vertex])
@@ -474,36 +573,17 @@ class Graph():
                 break
             for v, cost in neighbours[u]:
                 alt = dist[u] + cost
-                if alt < dist[v]:   # Relax (u,v,a)
+                if alt < dist[v]:
                     dist[v] = alt
                     previous[v] = u
-        #pp(previous)
         s, u = deque(), dest
         while previous[u]:
-            s.pushleft(u)
+            s.appendleft(u)
             u = previous[u]
-        s.pushleft(u)
-        return s
+        s.appendleft(u)
+        if len(s) == 1: return NI_KONEC
+        else: return s
  
- 
-#  def sestaviGraf(self):
-#   "Sestavi graf trenutne poteze."
-#   queue = deque([])
-#   for st in range(SIZE):
-#       queue.append([(-1, 0),(0, st), 1])
-#       queue.append([(SIZE, 0),(SIZE+1, st), 1])
-#   for vr in range(SIZE):
-#           for st in range(SIZE):
-#               sosedi = sosedi(vr, st)
-#               for sosed in sosedi:
-#                   if self.plosca[vr][st] == self.plosca[sosed[0]][sosed[1]]
-#                       queue.append([(vr, st),(sosed[0], sosed[1]), 0])
-#                   elif self.plosca[vr][st] == "PRAZNO":
-#                       queue.append([(vr, st),(sosed[0], sosed[1]), 1])
-#                   else:
-#                       pass
-
-
 
 #########################################
 if __name__ == "__main__":
