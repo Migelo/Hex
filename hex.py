@@ -6,13 +6,15 @@ import argparse
 from collections import namedtuple, deque
 from pprint import pprint as pp
 
-VELIKOST = 8
+MINIMAX_GLOBINA = 8
+VELIKOST = 4
 MODRI = 'M'
 RDECI = 'R'
 PRAZNO = 'PRAZNO'
 seznam= []
 ZMAGOVALEC = None
 NI_KONEC = "ni konec"
+NEODLOCENO = "neodloceno"
 
 radij=20.
 premik=radij*.87
@@ -40,16 +42,17 @@ def nasprotnik(igralec):
     elif igralec == RDECI:
         return MODRI
     else:
+        print igralec
         assert False, "neveljaven nasprotnik"
 
 #########################################
 
 class Igra():
 
-    def __init__(self, gui):
+    def __init__(self):
         self.plosca = [['PRAZNO' for x in range(VELIKOST)] for y in range(VELIKOST)]
         self.na_potezi = MODRI
-        self.gui = gui
+        # self.gui = gui
         self.zgodovina = []
 
     def shrani_pozicijo(self):
@@ -118,7 +121,7 @@ class Igra():
         # print len(graph_modri)
         # print graph_modri
         graph_modri = Graph(graph_modri)
-        graph_rdeci = set(self.sestaviGraf(self.plosca, RDECI))
+        graph_rdeci = self.sestaviGraf(self.plosca, RDECI)
         # print graph_rdeci
         graph_rdeci = Graph(graph_rdeci)
         # print self.plosca
@@ -173,12 +176,11 @@ class Igra():
                         seznamSosedov = self.sosedi(vr, st)
                         for sosed in seznamSosedov:
                             if plosca[vr][st] == barva and plosca[sosed[0]][sosed[1]] == barva:
-                                # print("Appending: ", (vr, st), (sosed[0], sosed[1]))
                                 queue.append(((vr, st),(sosed[0], sosed[1]), 0))
                             else:
                                 pass
         if barva == MODRI:
-            print "barva: ", barva
+            # print "barva: ", barva
             for vr in range(VELIKOST):
                 queue.append(((0, -1),(vr, 0), 1))
                 queue.append(((vr, VELIKOST - 1),(0, VELIKOST), 1))
@@ -189,31 +191,6 @@ class Igra():
                 queue.append(((VELIKOST - 1, st),(VELIKOST , 0), 1))
 
         return queue
-
-    def je_konec(self):
-        global ZMAGOVALEC
-        print "Zmagal: ",ZMAGOVALEC
-        for x in range(0, VELIKOST):
-            obstaja_x = False
-            for y in range(0, VELIKOST):
-                if self.plosca[y][x] == 'M':
-                    obstaja_x = True
-            if obstaja_x == False:
-                return False
-            if obstaja_x == True and x == VELIKOST - 1:
-                x = 0
-                for y in range(0, VELIKOST):
-                    if self.plosca[y][x] == 'M':
-                        print("Kličemo povezani M!")
-                        print("y: " + str(y))
-                        seznam.append(self.povezano('M', x, y))
-        if ZMAGOVALEC != None:
-            return True
-        if len(self.veljavne_poteze()) == 0:
-            ZMAGOVALEC = "NEODLOCENO"
-            return True
-
-
                     
 #########################################
 
@@ -301,7 +278,7 @@ class Gui():
 
     TAG_FIGURA = 'fig'
 
-    def __init__(self, root):
+    def __init__(self, root, globina):
         self.plosca = Canvas(root, width=50*(VELIKOST+1), height=(VELIKOST)*2*radij)
         self.plosca.grid(row=2, column=0)
 
@@ -315,15 +292,16 @@ class Gui():
         menu = Menu(root)
         root.config(menu=menu)
         menu_moznosti = Menu(menu)
+
         menu.add_cascade(label="Možnosti", menu=menu_moznosti)
         menu_moznosti.add_command(label="Človek proti človeku", command=lambda:
-                                        self.restart(Clovek(self), Clovek(self)))
+                                        self.zacni_igro(Clovek(self), Clovek(self)))
         menu_moznosti.add_command(label="Človek proti računalniku", command=lambda:
-                                        self.restart(Clovek(self), Racunalnik(self, AlfaBeta(globina))))
+                                        self.zacni_igro(Clovek(self), Racunalnik(self, Minimax(globina))))
         menu_moznosti.add_command(label="Računalnik proti računalniku", command=lambda:
-                                        self.restart(Racunalnik(self, AlfaBeta(globina)), Racunalnik(self, AlfaBeta(globina))))
+                                        self.zacni_igro(Racunalnik(self, Minimax(globina)), Racunalnik(self, Minimax(globina))))
         menu_moznosti.add_command(label="Računalnik proti človeku", command=lambda:
-                                        self.restart(Racunalnik(self, AlfaBeta(globina)), Clovek(self)))
+                                        self.zacni_igro(Racunalnik(self, AlfaBeta(globina)), Clovek(self)))
 
         self.napis1 = StringVar(root, value="Hex")
         Label(root, textvariable=self.napis1).grid(row=0, column=0)
@@ -332,7 +310,25 @@ class Gui():
         Label(root, textvariable=self.napis2).grid(row=1, column=0)
 
         # self.igra = Igra()
-        self.restart(Clovek(self), Clovek(self))
+        # self.restart(Clovek(self), Clovek(self))
+        # Prični igro v načinu človek proti računalniku
+        self.zacni_igro(Clovek(self), Racunalnik(self, Minimax(globina)))
+
+    def zacni_igro(self, igralec_modri, igralec_rdeci):
+        """Nastavi stanje igre na zacetek igre.
+           Za igralca uporabi dana igralca."""
+        # Ustavimo vsa vlakna, ki trenutno razmišljajo
+        self.prekini_igralce()
+        # Pobrišemo vse figure s polja
+        for i in range(VELIKOST**2): self.plosca.itemconfig(seznamSestkotnikov[i], fill='Grey')
+        # Ustvarimo novo igro
+        self.igra = Igra()
+        # Shranimo igralce
+        self.igralec_modri = igralec_modri
+        self.igralec_rdeci = igralec_rdeci
+        # Križec je prvi na potezi
+        self.napis2.set("Na potezi je MODRI.")
+        self.igralec_modri.igraj()
 
 
     def plosca_klik(self, event):                  
@@ -409,18 +405,6 @@ class Gui():
         else:
             self.napis1.set("Neodločeno.")
 
-    def restart(self, igralec_modri, igralec_rdeci):
-        "Metoda ponastavi igro"
-        # self.prekini_igralce()
-        self.plosca.delete(Gui.TAG_FIGURA)
-        #pobarvaj začetni poziciji
-        self.napis1.set("Hex")
-        self.napis2.set("Na potezi je modri.")
-        self.igra = Igra(Gui)
-
-        self.igralec_modri = igralec_modri
-        self.igralec_rdeci = igralec_rdeci
-        self.igralec_modri.igraj()
 
     def pobarvaj_modro(self, tag):
         """Pobarva polje na modro"""
@@ -429,6 +413,12 @@ class Gui():
     def pobarvaj_rdece(self, tag):
         """Pobarva polje na rdece"""
         if ZMAGOVALEC == None: self.plosca.itemconfig(seznamSestkotnikov[tag], fill='red')
+
+    def prekini_igralce(self):
+        """Sporoči igralcem, da morajo nehati razmišljati."""
+        logging.debug ("prekinjam igralce")
+        if self.igralec_modri: self.igralec_modri.prekini()
+        if self.igralec_rdeci: self.igralec_rdeci.prekini()
         
     def zapriOkno(self, root):
         """Ta metoda se pokliče, ko uporabnik zapre aplikacijo."""
@@ -453,97 +443,121 @@ class Gui():
 
 
 class Minimax():
+    ZMAGA = 1000000
+    NESKONCNO = ZMAGA + 1
+
     def __init__(self, globina):
-        self.globina = globina
-        self.igra = None
-        self.igram = None
-        self.poteza = None
-        self.prekinitev = None
+        self.globina = globina  # do katere globine iscemo?
+        self.prekinitev = False # ali moramo koncati?
+        self.igra = None # objekt, ki opisuje igro (ga dobimo kasneje)
+        self.jaz = None  # katerega igralca igramo (podatek dobimo kasneje)
+        self.poteza = None # sem napisemo potezo, ko jo najdemo
 
     def prekini(self):
         self.prekinitev = True
 
     def izracunaj_potezo(self, igra):
+        """Izracunaj potezo za trenutno stanje dane igre."""
+        # To metodo poklicemo iz vzporednega vlakna
         self.igra = igra
-        self.igram = self.igra.na_potezi
-        self.poteza = None
-        self.prekinitev = False
-
-        (poteza, vrednost) = self.minimax(self.globina, True)
+        self.prekinitev = False # Glavno vlakno bo to nastvilo na True, ce moramo nehati
+        self.jaz = self.igra.na_potezi
+        self.poteza = None # Sem napisemo potezo, ko jo najdemo
+        # Pozenemo minimax
+        (poteza, vrednost) = self.minimax(self.globina, -Minimax.NESKONCNO, Minimax.NESKONCNO, True)
+        self.jaz = None
         self.igra = None
-        self.igram = None
 
         if not self.prekinitev:
             logging.debug ("minimax: poteza {0}, vrednost {1}".format(poteza, vrednost))
+            print poteza, vrednost
             self.poteza = poteza
             return poteza
 
-    ZMAGA = 1000000
-    NESKONCNO = ZMAGA + 1
 
-    def minimax(self, globina, maksimiziramo):
+
+    def minimax(self, globina, alfa, beta, maksimiziramo):
+        """Glavna metoda minimax."""
         if self.prekinitev:
-            logging.debug ("Minimax prekinja.")
+            # Sporocili so nam, da moramo prekiniti
+            logging.debug ("Minimax prekinja, globina = {0}".format(globina))
             return (None, 0)
-        if self.igra.je_konec():
-            stanje = self.igra.stanje()
-            zmagovalec = stanje[2]
-            if zmagovalec == self.igram:
+        zmagovalec = self.igra.stanje_igre()
+        if zmagovalec in (MODRI, RDECI, NEODLOCENO):
+            # Igre je konec, vrnemo njeno vrednost
+            if zmagovalec == self.jaz:
                 return (None, Minimax.ZMAGA)
-            elif zmagovalec == nasprotnik(self.igram):
+            elif zmagovalec == nasprotnik(self.jaz):
                 return (None, -Minimax.ZMAGA)
             else:
                 return (None, 0)
-        else:
+        elif zmagovalec == NI_KONEC:
+            # Igre ni konec
             if globina == 0:
-                vrednost = self.vrednost_pozicije()
-                return (None, vrednost)
+                return (None, self.vrednost_pozicije())
             else:
+                # Naredimo eno stopnjo minimax
                 if maksimiziramo:
+                    # Maksimiziramo
                     najboljsa_poteza = None
                     vrednost_najboljse = -Minimax.NESKONCNO
-                    for poteza in self.igra.veljavne_poteze():
-                        self.igra.shrani_pozicijo()
-                        self.igra.naredi_potezo(poteza[0], poteza[1])
-                        vrednost = self.minimax(globina-1, not maksimiziramo)[1]
+                    for p in self.igra.veljavne_poteze():
+                        self.igra.povleci_potezo(p)
+                        vrednost = self.minimax(globina-1, alfa, beta, not maksimiziramo)[1]
                         self.igra.razveljavi()
-                        if vrednost > vrednost_najboljse:
-                            vrednost_najboljse = vrednost
-                            najboljsa_poteza = poteza
+                        if vrednost > alfa:
+                            alfa = vrednost
+                            najboljsa_poteza = p
+                        if alfa >= beta:
+                            break
+                    return (najboljsa_poteza, alfa)
+
                 else:
+                    # Minimiziramo
                     najboljsa_poteza = None
                     vrednost_najboljse = Minimax.NESKONCNO
-                    for poteza in self.igra.veljavne_poteze():
-                        self.igra.shrani_pozicijo()
-                        self.igra.naredi_potezo(poteza[0], poteza[1])
-                        vrednost = self.minimax(globina-1, not maksimiziramo)[1]
+                    for p in self.igra.veljavne_poteze():
+                        self.igra.povleci_potezo(p)
+                        vrednost = self.minimax(globina-1, alfa, beta, not maksimiziramo)[1]
                         self.igra.razveljavi()
-                        if vrednost < vrednost_najboljse:
-                            vrednost_najboljse = vrednost
-                            najboljsa_poteza = poteza
+                        if vrednost > alfa:
+                            alfa = vrednost
+                            najboljsa_poteza = p
+                        if alfa >= beta:
+                            break
+                    return (najboljsa_poteza, beta)
 
-                assert (najboljsa_poteza is not None), "minimax: izračunana poteza je None"
-                logging.debug (("---" * (MINIMAX_GLOBINA - globina)) + 
-                           "{0}: poteza={1}, vrednost={2}, max={3}".format(
-                               globina, najboljsa_poteza, vrednost_najboljse, maksimiziramo))
-                return (najboljsa_poteza, vrednost_najboljse)
+                assert (najboljsa_poteza is not None), "minimax: izracunana poteza je None"
+                # return (najboljsa_poteza, vrednost_najboljse)
+        else:
+            assert False, "minimax: nedefinirano stanje igre"
 
     def vrednost_pozicije(self):
-        "Metoda ovrednoti pozicijo glede na najkrajšo pot, igra potem prvo v vrsti."
+        """Metoda ovrednoti pozicijo glede na najkrajšo pot, igra potem prvo v vrsti."""
+        graph_modri = self.igra.sestaviGraf(self.igra.plosca, MODRI, True)
+        graph_modri = Graph(graph_modri)
+        stanje_MODRI = graph_modri.dijkstra((0,-1), (0,VELIKOST))
+
+        graph_rdeci = self.igra.sestaviGraf(self.igra.plosca, RDECI, True)
+        graph_rdeci = Graph(graph_rdeci)
+        stanje_RDECI = graph_rdeci.dijkstra((-1,0), (VELIKOST, 0))
+        
         vrednost = 0
         stM=0
         stR=0
-        for vr in range(VELIKOST):
-            for st in range(VELIKOST):
-                if self.igra.plosca[vr][st]=='M':
-                    stM+=1
-                elif self.igra.plosca[vr][st]=='R':
-                    stR+=1
-        if self.igram == IGRALEC_MODRI:
-            vrednost = (stM-stR)
+
+
+        for item in stanje_MODRI:
+            if item != (0,-1) and item != (0, VELIKOST) and self.igra.plosca[item[0]][item[1]] == PRAZNO: stM += 1
+
+        for item in stanje_RDECI:
+            if item != (-1, 0) and item != (VELIKOST, 0) and self.igra.plosca[item[0]][item[1]] == PRAZNO: stR += 1
+
+        if self.jaz == MODRI:
+            vrednost = VELIKOST**2 - stM
             return vrednost
-        elif self.igram == IGRALEC_RDECI:
-            vrednost = (stR-stM)
+        elif self.jaz == RDECI:
+            vrednost = VELIKOST**2 - stR
             return vrednost
         else:
             assert False, "Vrednost pozicij ima neveljavnega igralca."
@@ -590,10 +604,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Igrica Hex")
     
-    # parser.add_argument('--globina',
-    #                     default=MINIMAX_GLOBINA,
-    #                     type=int,
-    #                     help='globina iskanja za minimax ali alfabeta algoritem')
+    parser.add_argument('--globina',
+                        default=MINIMAX_GLOBINA,
+                        type=int,
+                        help='globina iskanja za minimax ali alfabeta algoritem')
     
     parser.add_argument('--debug',
                         action='store_true',
@@ -607,6 +621,6 @@ if __name__ == "__main__":
     root = Tk()
     root.title("Hex")
     
-    aplikacija = Gui(root)
+    aplikacija = Gui(root, args.globina)
 
     root.mainloop()
