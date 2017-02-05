@@ -194,16 +194,6 @@ class Racunalnik():
 
     def igraj(self):
         """Igraj potezo, ki jo vrne algoritem."""
-        # Tu sprožimo vzporedno vlakno, ki računa potezo. Ker tkinter ne deluje,
-        # če vzporedno vlakno direktno uporablja tkinter
-        # (glej http://effbot.org/zone/tkinter-threads.htm),
-        # zadeve organiziramo takole:
-        # - poženemo vlakno, ki poišče potezo
-        # - to vlakno nekam zapiše potezo, ki jo je našlo
-        # - glavno vlakno, ki sme uporabljati tkinter, vsakih 100ms pogleda, ali
-        #   je že bila najdena poteza (metoda preveri_potezo spodaj).
-        # Ta rešitev je precej amaterska. Z resno knjižnico za GUI bi zadeve lahko
-        # naredili bolje (vlakno bi samo sporočilo GUI-ju, da je treba narediti potezo).
 
         # Naredimo vlakno, ki mu podamo *kopijo* igre (da ne bo zmedel GUIja):
         self.mislec = threading.Thread(
@@ -241,6 +231,12 @@ class Gui():
     def __init__(self, root, globina):
         self.plosca = Canvas(root, width=50*(VELIKOST+1), height=(VELIKOST)*2*radij)
         self.plosca.grid(row=2, column=0)
+        width = 50*(VELIKOST+1)
+        height=(VELIKOST)*2*radij+60
+        self.plosca.create_oval(2*radij, height/2-10, 2*radij+10, height/2, fill='blue')
+        self.plosca.create_oval(width-2*radij, height/2*2/3-10, width-2*radij+10, height/2*2/3, fill='blue')
+        self.plosca.create_oval(width/2-5, 15, width/2+5, 25, fill='red')
+        self.plosca.create_oval(width/2-5, (VELIKOST)*2*radij-10, width/2+5, (VELIKOST)*2*radij, fill='red')
 
         self.narisiPlosco()
 
