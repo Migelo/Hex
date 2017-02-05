@@ -6,7 +6,7 @@ import argparse
 from collections import namedtuple, deque
 from pprint import pprint as pp
 
-MINIMAX_GLOBINA = 8
+MINIMAX_GLOBINA = 3
 VELIKOST = 4
 MODRI = 'M'
 RDECI = 'R'
@@ -464,7 +464,7 @@ class Minimax():
         self.jaz = self.igra.na_potezi
         self.poteza = None # Sem napisemo potezo, ko jo najdemo
         # Pozenemo minimax
-        (poteza, vrednost) = self.minimax(self.globina, -Minimax.NESKONCNO, Minimax.NESKONCNO, True)
+        (poteza, vrednost) = self.minimax(self.globina, True)
         self.jaz = None
         self.igra = None
 
@@ -476,7 +476,7 @@ class Minimax():
 
 
 
-    def minimax(self, globina, alfa, beta, maksimiziramo):
+    def minimax(self, globina, maksimiziramo):
         """Glavna metoda minimax."""
         if self.prekinitev:
             # Sporocili so nam, da moramo prekiniti
@@ -503,37 +503,30 @@ class Minimax():
                     vrednost_najboljse = -Minimax.NESKONCNO
                     for p in self.igra.veljavne_poteze():
                         self.igra.povleci_potezo(p)
-                        vrednost = self.minimax(globina-1, alfa, beta, not maksimiziramo)[1]
+                        vrednost = self.minimax(globina-1, not maksimiziramo)[1]
                         self.igra.razveljavi()
-                        if vrednost > alfa:
-                            alfa = vrednost
+                        if vrednost > vrednost_najboljse:
+                            vrednost_najboljse = vrednost
                             najboljsa_poteza = p
-                        if alfa >= beta:
-                            break
-                    return (najboljsa_poteza, alfa)
-
                 else:
                     # Minimiziramo
                     najboljsa_poteza = None
                     vrednost_najboljse = Minimax.NESKONCNO
                     for p in self.igra.veljavne_poteze():
                         self.igra.povleci_potezo(p)
-                        vrednost = self.minimax(globina-1, alfa, beta, not maksimiziramo)[1]
+                        vrednost = self.minimax(globina-1, not maksimiziramo)[1]
                         self.igra.razveljavi()
-                        if vrednost > alfa:
-                            alfa = vrednost
+                        if vrednost < vrednost_najboljse:
+                            vrednost_najboljse = vrednost
                             najboljsa_poteza = p
-                        if alfa >= beta:
-                            break
-                    return (najboljsa_poteza, beta)
 
                 assert (najboljsa_poteza is not None), "minimax: izracunana poteza je None"
-                # return (najboljsa_poteza, vrednost_najboljse)
+                return (najboljsa_poteza, vrednost_najboljse)
         else:
             assert False, "minimax: nedefinirano stanje igre"
 
     def vrednost_pozicije(self):
-        """Metoda ovrednoti pozicijo glede na najkrajšo pot, igra potem prvo v vrsti."""
+        """Metoda ovrednoti pozicijo glede na najkrajšo pot. Pozicija ima vecjo vrednost, ce je del najkrajse poti."""
         graph_modri = self.igra.sestaviGraf(self.igra.plosca, MODRI, True)
         graph_modri = Graph(graph_modri)
         stanje_MODRI = graph_modri.dijkstra((0,-1), (0,VELIKOST))
