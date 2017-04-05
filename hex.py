@@ -231,6 +231,9 @@ class Gui():
     def __init__(self, root, globina):
         self.plosca = Canvas(root, width=50*(VELIKOST+1), height=(VELIKOST)*2*radij)
         self.plosca.grid(row=2, column=0)
+        self.narisiPlosco()
+
+        # nariši barvne oznake stranic
         width = 50*(VELIKOST+1)
         height=(VELIKOST)*2*radij+60
         self.plosca.create_oval(2*radij, height/2-10, 2*radij+10, height/2, fill='blue')
@@ -238,7 +241,6 @@ class Gui():
         self.plosca.create_oval(width/2-5, 15, width/2+5, 25, fill='red')
         self.plosca.create_oval(width/2-5, (VELIKOST)*2*radij-10, width/2+5, (VELIKOST)*2*radij, fill='red')
 
-        self.narisiPlosco()
 
         self.igralec_modri = None
         self.igralec_rdeci = None
